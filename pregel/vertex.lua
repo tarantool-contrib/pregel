@@ -19,9 +19,35 @@
 --
 -- @module pregel.vertex
 
-local json = require('json')
+local json    = require('json')
+local msgpack = require('msgpack')
 
 local table_clear = require('table.clear')
+
+--- A copy of `value` that shares no table with it, as the wire would carry it.
+--
+-- The vertex API hands tables to the runtime, which used to hold them by
+-- reference until something serialised them: the flush at the end of the
+-- superstep, or -- with the table queue engine and a receiver on this worker --
+-- nothing at all, so the receiver's queue held the sender's own table.
+-- Capturing when the call is made is what lets the caller reuse or change the
+-- table as soon as the call returns, and what gives a receiver a table of its
+-- own (docs/api-design.md section 0, D8).
+--
+-- A msgpack round trip rather than a deep copy: the value then comes out as the
+-- space engine and net.box would make it, whichever engine carries it. Anything
+-- that is not a table cannot be changed through a reference and is returned as
+-- it is.
+--
+-- @param value the payload
+-- @return the payload, or a copy of it when it is a table
+local function capture(value)
+    if type(value) ~= 'table' then
+        return value
+    end
+    local copy = msgpack.decode(msgpack.encode(value))
+    return copy
+end
 
 -- Declared here so the private compute() below can reach vote_halt: the
 -- default halt has to go through the public method rather than assign
@@ -219,6 +245,9 @@ vertex_methods = {
     -- The sender travels with it and is stored with it, so the receiving
     -- vertex reads it back from pairs_messages() and can answer.
     --
+    -- A table message is captured before this returns: the caller may change
+    -- or reuse it afterwards, and the receiver gets a copy of its own.
+    --
     -- @param receiver destination vertex name
     -- @param msg any value the message queue can hold
     -- @function send_message
@@ -228,7 +257,7 @@ vertex_methods = {
         -- that wants to answer has no other way to learn who asked.
         self.__pregel.mpool:by_id(receiver):put(
                 'message.deliver',
-                {receiver, msg, self.__id}
+                {receiver, capture(msg), self.__id}
         )
     end,
     --- This vertex's user value.
@@ -301,13 +330,16 @@ vertex_methods = {
     --- Ask for a new vertex to be created.
     --
     -- The name comes from the instance's obtain_name applied to `value`, which
-    -- is also what decides the worker it lands on.
+    -- is also what decides the worker it lands on. A table value is captured
+    -- before this returns, and named from the copy, so changing it afterwards
+    -- can move neither the value nor the name.
     --
     -- @param value the vertex value; obtain_name must be able to name it
     -- @raise when `value` is nil
     -- @function add_vertex
     add_vertex = function(self, value)
         assert(value ~= nil, 'value is nil')
+        value = capture(value)
         local name = self.__pregel.obtain_name(value)
         self.__pregel.mpool:by_id(name):put(
                 'vertex.store.delayed',
@@ -324,7 +356,7 @@ vertex_methods = {
     --
     -- An edge of this vertex is queued locally and applied by compute(); one of
     -- another vertex is sent to the worker that owns `src` and applied between
-    -- supersteps.
+    -- supersteps. Either way a table value is captured before this returns.
     --
     -- @param src source vertex name, or the destination in the two-argument form
     -- @param dest destination vertex name, or the value
@@ -341,6 +373,7 @@ vertex_methods = {
         if value == nil then
             value = json.NULL
         end
+        value = capture(value)
         assert(dest ~= nil, 'destination is nil')
         if src == self:get_name() then
             vertex_private_methods.add_edge(self, dest, value)

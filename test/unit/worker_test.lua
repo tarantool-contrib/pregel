@@ -736,6 +736,96 @@ g.test_a_vertex_reads_the_sender_of_its_messages = function()
 end
 
 -------------------------------------------------------------------------------
+-- When a payload is captured
+-------------------------------------------------------------------------------
+
+-- Defect: vertex:send_message held its payload by reference until something
+-- serialised it. With the space engine that was the flush at the end of the
+-- superstep, so a change the sender made after the send reached the receiver.
+-- With the table engine and a receiver on the same worker nothing ever did:
+-- the receiver's queue held the sender's own table, so the receiver saw a
+-- change the sender made in the superstep the message was read in, and its own
+-- writes landed in the sender's table. See docs/api-design.md section 0, D8.
+for _, engine in ipairs({'space', 'table'}) do
+    g['test_a_payload_is_captured_at_send_with_the_' .. engine .. '_engine'] =
+    function()
+        local payload = {n = 1}
+        local seen = {}
+        local w, name = make_worker({
+            queue_engine = engine,
+            compute = function(self)
+                if self:get_name() == 'alice' then
+                    if self:get_superstep() == 1 then
+                        self:send_message('bob', payload)
+                        payload.n = 2
+                    else
+                        -- alice sorts before bob, so this runs before he
+                        -- reads what she sent
+                        payload.n = 3
+                    end
+                else
+                    for _, message in self:pairs_messages() do
+                        table.insert(seen, message.n)
+                        message.n = 100
+                    end
+                end
+                self:vote_halt(false)
+            end,
+        })
+        w.data_space:replace{'alice', false, {name = 'alice'}, {}}
+        w.data_space:replace{'bob', false, {name = 'bob'}, {}}
+        w.in_progress = 2
+        local m = make_master(name)
+
+        w:run_superstep(1)
+        w:after_superstep()
+        w:run_superstep(2)
+
+        t.assert_equals(seen, {1}, 'bob reads the payload as it was sent')
+        t.assert_equals(payload.n, 3, "bob's write stays in bob's copy")
+        m:stop()
+        drop_worker(w)
+    end
+end
+
+-- The same defect in the topology calls: the values add_vertex and add_edge
+-- hand to the runtime waited in the pool by reference until the flush.
+g.test_topology_payloads_are_captured_at_the_call = function()
+    local w, name = make_worker({
+        compute = function(self)
+            if self:get_name() ~= 'a' then
+                return
+            end
+            local value = {name = 'new', tag = 'as added'}
+            self:add_vertex(value)
+            value.tag = 'changed after'
+            local weight = {w = 1}
+            self:add_edge('b', 'c', weight)
+            weight.w = 2
+            -- An edge of its own: queued on the vertex object and written
+            -- back when this function returns, so it was exposed until then.
+            local own = {w = 1}
+            self:add_edge('d', own)
+            own.w = 2
+        end,
+    })
+    w.data_space:replace{'a', false, {name = 'a'}, {}}
+    w.data_space:replace{'b', true, {name = 'b'}, {}}
+    w.in_progress = 1
+    local m = make_master(name)
+
+    w:run_superstep(1)
+    w:after_superstep()
+
+    t.assert_equals(w.data_space:get{'new'}[3],
+                    {name = 'new', tag = 'as added'})
+    t.assert_equals(w.data_space:get{'b'}[4], {{'c', {w = 1}}})
+    t.assert_equals(w.data_space:get{'a'}[4], {{'d', {w = 1}}})
+    m:stop()
+    drop_worker(w)
+end
+
+-------------------------------------------------------------------------------
 -- A compute that raises
 -------------------------------------------------------------------------------
 
