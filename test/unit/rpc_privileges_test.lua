@@ -29,7 +29,11 @@ local PREFIX   = 'rpc_privileges_app_'
 --
 -- box.session.uid() is the session's user even inside a setuid function, whose
 -- effective user is the function's owner -- which is what makes the caller the
--- owner of a space the owner of the function creates.
+-- owner of a space the owner of the function creates. That is right here,
+-- where every call arrives over net.box as the job user. A production door
+-- takes the owner from the job instead: a worker's own bucket runs compute
+-- in-process, under whatever session drives it, and that can be admin
+-- (docs/api-design.md section 0, D3).
 local function door(name)
     if name:sub(1, #PREFIX) ~= PREFIX then
         error('outside the namespace: ' .. name, 0)

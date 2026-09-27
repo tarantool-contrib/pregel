@@ -9,22 +9,26 @@ Round four turns §8, and the questions a review of this document found
 missing, into decisions. **Where this section and §4 or §8 disagree, this
 section wins.** Sections 1–8 stay as the argument that led here, and their
 `file:line` citations still refer to `4549a00`. Citations in this section refer
-to `a9f9393`, the tip of `bigbes/gh-no-tarantool-v3` on 2026-09-27.
+to `a9f9393`, the commit round four was written against (the tip of
+`origin/bigbes/gh-no-tarantool-v3` on 2026-09-27); §0.4 lists what landed on
+top of it the same day.
 
 Every decision below was put to the maintainer and taken: D1–D8 one question
-at a time, D9–D12 confirmed as recommended.
+at a time, D9–D12 confirmed as recommended. §0.4 records what a review changed
+afterwards.
 
 ### 0.1 What changed under this document
 
 Round three was committed at 13:06 on 2026-09-08 and was stale within the
-hour: eighteen commits landed on the branch in the ninety minutes after it.
+hour: eighteen commits landed on the branch in the hour and a half after it.
 
 - **§3.13** — the wedge is fixed (`1f14a97`, `pregel-2c0`). A compute that
   raises fails the superstep with a custom `box.error` of type
   `PregelComputeFailed`, carrying `pregel_code`, `vertex`, `superstep`,
   `pregel_message` and `traceback` (`compute_failed` in `pregel/worker.lua`),
-  and the master role's `status()` reports those fields (`7834428`). What
-  §3.13 calls the larger problem — nothing owns a run — is unchanged.
+  and the master role's `status()` reports `vertex`, `superstep` and
+  `traceback` beside `error` (`7834428`). What §3.13 calls the larger problem
+  — nothing owns a run — is unchanged.
 - **§3.18** — the sender is kept (`cf3c638`, `pregel-atx`). `pairs_messages()`
   yields `(sender, message)`, and a combined message has no sender, which is
   §4.13(e) already. §3.12's "a leading value that means nothing" no longer
@@ -36,13 +40,16 @@ hour: eighteen commits landed on the branch in the ninety minutes after it.
   `credentials.roles.pregel`, and the roles grant nothing (`08ae4a4`).
 - **§3.19 and §3.11** — a job context `{name, user, instance, dir}` reaches
   `worker_context` and the preloads (`30d4b83`), which retired lookalike's
-  `app_cfg.grant_to`. `dir` is the app module's directory: the answer §3.11
-  called "neither".
+  `app_cfg.grant_to`. `dir` is the app module's directory, found with
+  `package.searchpath` — one of the two answers §3.11 rejected ("the right
+  answer is neither") in favour of a deployment base directory in the config
+  (§4.7), which has not landed.
 - **§3.21** — `examples/mf` now also infers where a run starts, from a
   superstep number that went down (`4e8a251`). That is a second consequence of
   there being no run identity.
-- **§8.10** — three of the four landed. The stale comment is still there, now
-  at `pregel/worker.lua:705-713`.
+- **§8.10** — three of the four had landed by `a9f9393`. The fourth, the stale
+  comment at `pregel/worker.lua:705-713`, was fixed after it (`16aed82`,
+  `pregel-0fo`).
 
 The epic `pregel-gqh` (loader role, graph as an entity, ingestion API, vshard
 backend) was filed forty minutes after round three, and neither document cited
@@ -56,9 +63,10 @@ The graph is a persistent entity whose spaces are named by graph, not by job
 place. What belongs to a run is everything transient — both message queues,
 the topology-mutation queue and the run's delayed-push buckets — and those are
 cleared when a run starts. At `a9f9393` they are adopted as they stand instead:
-`create_spaces` and `queue.new` use `if_not_exists` and rebuild their counters
-from the tuples that survived, so a run after a failure reads the failed run's
-messages and applies its pending mutations.
+`create_spaces`, `queue.new` and mpool's delayed buckets all take a surviving
+space with `if_not_exists`; `queue.new` rebuilds its per-receiver counters from
+the tuples in it, and a delayed bucket reads its count back. So a run after a
+failure reads the failed run's messages and applies its pending mutations.
 
 A meta space per graph records its state: `loaded`, `running <run>`,
 `done <run>`, `failed <run>`. A run refuses to start over a graph whose last
@@ -88,9 +96,13 @@ and `master_preload` / `worker_preload` go on the schedule of `pregel-gqh.9`
 and `.10`. This is Pregel's own split: interpreting input is decoupled from
 computing over it (§3.5 of the paper).
 
-A second vertex with the same id within one load is an error (§4.3); a batch
-retried with the same sequence number is a no-op (`pregel-gqh.3`). The two
-rules do not collide.
+Two kinds of duplicate are kept apart. A batch retried with the same sequence
+number is a replay and a no-op (`pregel-gqh.3`). A second record for the same
+id within one load is left **open** by this round: §4.3 wants it to fail,
+while `pregel-gqh.3` keeps replace semantics per vertex. Until that is decided
+the ingestion API follows `pregel-gqh.3` — the later record replaces the
+earlier — and `finalize` should report how many were replaced, so a duplicate
+is not silent.
 
 **D3. App-owned storage goes through a setuid door and belongs to the job
 user.**
@@ -99,7 +111,11 @@ namespace from job-side code — `worker.open` or compute — after the
 partitioning is known, so a worker creates spaces only for what it owns. It is
 a function the role registers in `_func` with `setuid = true`. The function
 refuses any name outside the namespace and creates the space **owned by the job
-user**. Ownership is the whole access story: no grant is issued, which keeps
+user** — the user the credentials role `pregel` names, which the runtime
+supplies, and not the session's. A worker's own bucket runs compute in-process,
+under whatever session drives it (admin, when the master and a worker share a
+process), and a space owned by admin is one the job user cannot reach.
+Ownership is the whole access story: no grant is issued, which keeps
 `08ae4a4`'s rule that the roles grant nothing. `ctx:drop_space(name)` and index
 creation go through the same door; read, write and `truncate` the owner does
 itself. The credentials role `pregel` lists `execute` on the door, so the
@@ -138,20 +154,22 @@ The signature is `compute(v, inbox, ctx)`.
 
 - `v` is this vertex and is valid only during the call. It carries `v.id`,
   `v.kind`, `v.value` (a fresh decode, owned by the call), `v:edges()`,
-  `v:out_degree()`, the local mutations of D5, and messaging:
-  `v:send(dst, type, payload)` and `v:send_edges(type, payload)`. A reply is
-  `v:send(from, type, payload)`. Writing any other field of `v` raises, which
-  closes §3.4.
+  `v:out_degree()`, the local mutations of D5, messaging —
+  `v:send(dst, type, payload)` and `v:send_edges(type, payload)`, a reply
+  being `v:send(from, type, payload)` — and `v.graph`, through which it asks
+  for changes to other vertices (D5, D6). Writing any other field of `v`
+  raises, which closes §3.4.
 - `inbox:messages(type)` yields `(from, value)` pairs (D8); `inbox:fold` and
   `inbox:empty` are as §4.5 has them.
 - `ctx` is what every vertex of the worker shares: `ctx.cfg`, `ctx.services`,
-  `ctx.step`, `ctx.graph` (global mutations with explicit ids, and
-  `vertex_count`), `ctx.partition:owns(id)`, `ctx:aggregate`, `ctx:previous`,
-  `ctx:yield()` and `ctx:space()`.
+  `ctx.step`, `ctx.graph.vertex_count` (read-only), `ctx.partition:owns(id)`,
+  `ctx:aggregate`, `ctx:previous`, `ctx:yield()` and `ctx:space()`.
 
-*Supersedes* §4.5's `ctx:send`, `ctx:reply` and `ctx:send_edges`. A context
-that is shared cannot know which vertex is sending, and one that is rebound per
-vertex is §3.4's pooled-object trap again.
+*Supersedes* §4.5's `ctx:send`, `ctx:reply` and `ctx:send_edges`, and moves
+§4.6's mutations from `ctx.graph` to `v.graph`. A context that is shared cannot
+know which vertex is sending, or which one is asking for a vertex to be
+created — which D6 needs — and one that is rebound per vertex is §3.4's
+pooled-object trap again.
 
 **D5. A vertex's own edges change at once; everything else changes at the
 barrier.**
@@ -159,8 +177,11 @@ Changes to a vertex's own out-edges — `v:add_edge{id, dst, value}`,
 `v:delete_edge(id)`, `v:delete_edges{dst = ...}` — and its own removal take
 effect immediately. `v:edges()` shows the new list for the rest of the call,
 and the changes are persisted with the vertex's single write-back. Mutations of
-other vertices go through `ctx.graph` and are applied at the barrier in the
-four phases: delete edges, delete vertices, add vertices, add edges.
+other vertices go through `v.graph` — `v.graph:add_vertex{id, kind, value}`,
+`v.graph:add_edge{src, id, dst, value}`, `v.graph:delete_vertex(id)`,
+`v.graph:delete_edge{src, id}` — each request carrying the id of the vertex
+that made it, and are applied at the barrier in the four phases: delete edges,
+delete vertices, add vertices, add edges.
 
 This is Pregel's rule (§3.4 of the paper): "Local mutations cannot introduce
 conflicts and making them immediately effective simplifies distributed
@@ -182,8 +203,9 @@ they differ, the app's handler for that kind resolves them:
 
     conflicts = {<kind> = function(id, requests) return value end}
 
-`requests` is sorted by creator id, so the outcome never depends on arrival
-order. With no handler, or with requests of different kinds, the run fails with
+`requests` is sorted by creator id — the vertex whose `v.graph` made the request
+(D4, D5) — so the outcome never depends on arrival order. With no handler, or
+with requests of different kinds, the run fails with
 `VERTEX_CONFLICT`, naming the id and the superstep. Edge additions with the same
 `(src, edge_id)` follow the same rule. Deletions are idempotent and never
 conflict.
@@ -206,22 +228,30 @@ does at `a9f9393`. For a message whose recipient is absent at that point:
   superstep; or it may return without creating it, and they are dropped and
   counted;
 - with no handler for that type, the run fails with `MISSING_RECIPIENT`,
-  naming the id and one sender.
+  naming the id and, when the message has one, its sender.
 
 The handler is keyed by message type rather than by kind, because an absent
-vertex has no kind. Pregel also runs user handlers for a missing destination,
-to "create the missing vertex or remove the dangling edge" (§3.1 of the paper).
-*Supersedes* §4.9's unconditional failure, which would fail a
-topology-mutating algorithm the first time a neighbour is deleted in the
-superstep a message is written to it.
+vertex has no kind. Handlers run after the barrier's topology mutations have
+been applied, so a vertex a handler creates never meets a creation by compute.
+When messages of several types wait for one absent id, their handlers run once
+each in type-name order: the first to create the vertex settles it, and the
+messages of the others are then delivered to it. Pregel also runs user handlers
+for a missing destination, to "create the missing vertex or remove the dangling
+edge" (§3.1 of the paper). *Supersedes* §4.9's rule — fail, unless the app
+opts into counted drops wholesale — which leaves a topology-mutating algorithm
+the choice between failing the first time a neighbour is deleted in the
+superstep a message is written to it, and counting every misaddressed message
+as a drop, typos included.
 
 **D8. A payload is captured at send, and a received value belongs to the
 receiver.**
 `v:send` captures the payload before it returns, and the sender may reuse or
 change the table afterwards. `inbox:messages(type)` yields `(from, value)`, and
-`value` is the receiver's own: it may be kept, changed or stored. Both queue
-engines honour this. The table engine copies at send, by a msgpack round trip
-or a deep copy — the implementation's choice.
+`value` is the receiver's own: it may be kept, changed or stored. The runtime
+captures at send whichever engine carries the message, because neither did —
+the space engine captured at flush and the table engine never (below). v1 does
+it since `bb4f719` and `adfcc1e`: `send_message`, `add_vertex` and `add_edge`
+take a msgpack round trip of a table or cdata payload.
 
 Measured at `a9f9393` on one worker, with a table that its sender changes after
 sending it:
@@ -262,7 +292,9 @@ and in loaders, never a worker index or count.
 The jump backend orders its buckets by replicaset name, not by URI. That is a
 v1 fix: at `a9f9393` the roles order the participants by instance name
 (`pregel/roles/common.lua:1308`), and `mpool.new` re-sorts them by URI string
-(`pregel/mpool.lua:1166`). The graph's meta space (D1) then holds an
+(`pregel/mpool.lua:1166`). `6a89afd` made the change: a server entry may carry
+an `id`, `mpool.new` orders by it when every entry has one, and the roles pass
+the replicaset name. The graph's meta space (D1) then holds an
 append-only partition manifest, mapping bucket index to replicaset, written at
 load. A replicaset added later is appended rather than inserted, and a shard
 whose manifest does not match refuses to serve. vshard is the second backend
@@ -315,18 +347,20 @@ run option.
    fails the run. `on_progress(status)` observes it: it runs after, and its
    errors are logged, not raised.
 10. Masters are kept per job, several to a process, the way workers already
-    are (`workers[name]`). The master's RPC carries `(job, run, step)` like
-    every other RPC. §4.8's "a second master in a process is refused" is
-    dropped.
-11. No `api_version`, no shim, no deprecation cycle (§7).
-12. Edges stay in the vertex tuple as `{id, dst, value}` (§8.2). One
-    measurement is owed before that is final: the cost, against degree, of
-    decoding the whole edge array for every computed vertex (`apply()`
-    unpacks all four fields, `pregel/vertex.lua:46`).
+    are (`workers[name]`). The master's RPC carries `(job, run, step)`, as
+    §4.8's fencing has every RPC do; at `a9f9393` none carries a run or a
+    step, and the master's carries no job either. §4.8's "a second master in
+    a process is refused" is dropped.
+11. No `api_version`, no shim, no deprecation cycle (§4.1, §7).
+12. Edges stay in the vertex tuple, each gaining an id: `{id, dst, value}`
+    (§4.13(a), §8.2). One measurement is owed before that is final: the
+    cost, against degree, of decoding the whole edge array for every computed
+    vertex (`apply()` unpacks all four fields, `pregel/vertex.lua:46`).
 13. The constructor's option table is the contract, and `p.define` and the
     roles' specs derive from it. `pool_size` is renamed `batch_messages`
     (§8.8).
-14. The `data_<graph>` layout is public for reading and documented in the
+14. The layout of the graph's vertex space — `graph_<graph>`, as
+    `pregel-gqh.1` names it — is public for reading and documented in the
     README (§8.9).
 15. `examples/lookalike` is ported first and `examples/mf` next (§8.6).
 
@@ -334,17 +368,45 @@ run option.
 
 §7's order stands in spirit — risk first — with `pregel-gqh` interleaved:
 
-1. v1 fixes that need no v2: buckets ordered by replicaset name (D10), capture
-   at send in the table engine (D8), and the stale comment (§8.10).
+1. v1 fixes that need no v2 — **done the same day**: buckets ordered by
+   replicaset name (D10, `6a89afd`), capture at send (D8, `bb4f719`,
+   `adfcc1e`), and the stale comment (§8.10, `16aed82`).
 2. The graph as an entity with its meta space — state (D1) and partition
    manifest (D10) — and `mpool:owns()` (`pregel-gqh.1`, `.2`).
-3. The loader role and the ingestion API (D2; `pregel-gqh.3`, `.4`, `.6`,
-   `.7`).
+3. The loader role and the ingestion API (D2; `pregel-gqh.3`, `.4`, `.5`,
+   `.6`, `.7`), with the loader's own reference escape (`pregel-06i`, §0.4).
 4. The v2 compute surface — D4, D5, D8, D9, typed messages and reducers
    (D12.4–5) — with `examples/lookalike` ported first.
 5. Run handles, fencing, per-job masters, history and the hooks (§4.8, D11,
    D12.9–10).
 6. The vshard backend (`pregel-gqh.8`).
+
+### 0.4 After the decisions
+
+Step 1 of §0.3 landed the same day, and the decisions and the fixes were then
+reviewed by Codex (`gpt-6-astra`, read-only) and fact-checked against the code
+and the history by a separate agent. What that changed:
+
+- `bb4f719` captured tables only, on the claim that nothing else can be
+  changed through a reference. Cdata can — a datetime's `set()` rewrites the
+  object — and a sent datetime was received as set on both engines, so
+  `adfcc1e` captures cdata too.
+- The loader hands its tables to the pool by reference as well, and names a
+  vertex twice — once to route it, once on arrival — so a table changed after
+  the call can land under its new name on the shard of the old one. Reproduced
+  on a real worker; filed as `pregel-06i`, related to `pregel-gqh.3`, whose
+  batches carry an explicit name.
+- D3 says whose the door's spaces are: the job user the runtime knows, not the
+  session's.
+- Global mutations moved from `ctx.graph` to `v.graph` (D4–D6), so each
+  request carries the vertex that made it — the input D6's deterministic order
+  needs, which a shared context cannot supply — and D7 orders the creations its
+  handlers make.
+- D2 no longer claims its two duplicate rules agree: a duplicate id within a
+  load is left open against `pregel-gqh.3`.
+- `test/unit/rpc_privileges_test.lua` (`555173f`) puts D3's measurements in the
+  suite, which runs on both editions.
+- A number of smaller corrections of fact and wording in this section.
 
 ## 1. Purpose and how to read this document
 
