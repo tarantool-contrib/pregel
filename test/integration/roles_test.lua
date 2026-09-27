@@ -655,6 +655,28 @@ g.test_the_roles_find_each_other_in_the_cluster_config = function()
         return w.workers
     end, {helper.WORKER_ROLE})
     t.assert_equals(#uris, helper.WORKER_COUNT)
+
+    -- And each peer under its replicaset's name, which is what the buckets are
+    -- ordered by: not the URI, which a move or a failover changes, and not the
+    -- instance name, which a failover changes too (pregel-jy0). The master's
+    -- pool and a worker's must agree, or they shard the graph two ways.
+    local function peer_ids(server, role)
+        return server:exec(function(r)
+            local rv = {}
+            for i, bucket in ipairs(require(r).get().mpool.buckets) do
+                rv[i] = bucket.peer_id
+            end
+            return rv
+        end, {role})
+    end
+    local expected = {}
+    for i = 1, helper.WORKER_COUNT do
+        expected[i] = 'r_worker' .. i
+    end
+    t.assert_equals(peer_ids(c[helper.worker_name(1)], helper.WORKER_ROLE),
+                    expected)
+    t.assert_equals(peer_ids(c[helper.MASTER_NAME], helper.MASTER_ROLE),
+                    expected)
 end
 
 -- config:instance_uri('peer', ...) hands out the login and password from

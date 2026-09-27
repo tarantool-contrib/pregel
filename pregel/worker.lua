@@ -927,7 +927,10 @@ end
 --
 -- options.workers must list every worker of the job, this one included: the
 -- list is what the sharding is computed over, so an instance that leaves
--- itself out disagrees with the rest about who owns what.
+-- itself out disagrees with the rest about who owns what. An entry of it may
+-- also carry `id`, a name that outlives the worker's address; given to every
+-- entry, it is what the sharding orders the workers by (see mpool.new), and
+-- the master and every worker must be given the same ones.
 --
 -- Registering the instance under `name` is the last thing done, so the
 -- 'wait' message cannot find a half-built worker.

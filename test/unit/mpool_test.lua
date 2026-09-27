@@ -256,6 +256,71 @@ g.test_bucket_order_does_not_depend_on_the_listed_order = function()
     two:stop()
 end
 
+--- The ids of a pool's buckets, in bucket order.
+local function peer_ids(pool)
+    local rv = {}
+    for _, bucket in ipairs(pool.buckets) do
+        table.insert(rv, bucket.peer_id)
+    end
+    return rv
+end
+
+-- Defect: sorted by URI, a new address for one worker -- a move, or a manual
+-- failover to another instance of its replicaset -- reshuffled the buckets,
+-- and with them the owner of most names, while every tuple stayed where it
+-- was: a failover that changed one of three URIs moved 66.8% of 10000 names.
+-- A server may carry an id, and the roles give each worker its replicaset's
+-- name; the order is taken from that. See docs/api-design.md section 0, D10.
+g.test_bucket_order_follows_the_server_ids = function()
+    local before = mpool.new('unit', {
+        {uri = 'unix/:./no-such-a.iproto', id = 'rs-c'},
+        {uri = 'unix/:./no-such-b.iproto', id = 'rs-a'},
+        {uri = 'unix/:./no-such-c.iproto', id = 'rs-b'},
+    }, {connect_async = true})
+    -- rs-a's leader moves to an address that sorts after all the others
+    local after = mpool.new('unit', {
+        {uri = 'unix/:./no-such-a.iproto', id = 'rs-c'},
+        {uri = 'unix/:./no-such-z.iproto', id = 'rs-a'},
+        {uri = 'unix/:./no-such-c.iproto', id = 'rs-b'},
+    }, {connect_async = true})
+    t.assert_equals(peer_ids(before), {'rs-a', 'rs-b', 'rs-c'})
+    t.assert_equals(peer_ids(after), peer_ids(before))
+    local moved = 0
+    for i = 1, 1000 do
+        local name = 'v' .. i
+        if after:by_id(name).peer_id ~= before:by_id(name).peer_id then
+            moved = moved + 1
+        end
+    end
+    t.assert_equals(moved, 0, 'names changed owner with an address')
+    before:stop()
+    after:stop()
+end
+
+-- Two servers under one id would be one bucket position claimed twice, and a
+-- list where only some servers have an id has no single order to follow.
+g.test_server_ids_are_unique_and_given_to_all_or_none = function()
+    t.assert_error_msg_contains("the id 'rs-a' is given to more than one",
+                                function()
+        mpool.new('unit', {
+            {uri = DOWN, id = 'rs-a'},
+            {uri = DOWN2, id = 'rs-a'},
+        }, {connect_async = true})
+    end)
+    t.assert_error_msg_contains('1 of 2 servers carry an id', function()
+        mpool.new('unit', {{uri = DOWN, id = 'rs-a'}, DOWN2},
+                  {connect_async = true})
+    end)
+    t.assert_error_msg_contains("a server's id must be a non-empty string",
+                                function()
+        mpool.new('unit', {{uri = DOWN, id = 42}}, {connect_async = true})
+    end)
+    t.assert_error_msg_contains("a server's id must be a non-empty string",
+                                function()
+        mpool.new('unit', {{uri = DOWN, id = ''}}, {connect_async = true})
+    end)
+end
+
 g.test_wait_connected_resolves_the_local_bucket = function()
     local pool = mpool.new('unit', {URI}, {connect_async = true})
     t.assert_equals(pool.self_idx, 0)

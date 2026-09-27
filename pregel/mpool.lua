@@ -94,7 +94,7 @@ local function safe_uri(u)
     return u:gsub('^.*@', '')
 end
 
---- One entry of the `servers` array, as a {uri, params} pair.
+--- One entry of the `servers` array, as a {uri, params, id} table.
 --
 -- A plain URI string is the common case. The table form is what a Tarantool 3
 -- cluster config hands out for a listener that has parameters -- `transport:
@@ -102,15 +102,22 @@ end
 -- part of the URI argument ({uri = ..., params = ...}); there is no `params`
 -- connection option (measured on 3.9: "unexpected option 'params'").
 --
--- @param srv a URI string, or a {uri = ..., params = ...} table
--- @return a table with `uri` and, when the entry had them, `params`
--- @raise when srv is neither of those
+-- The table form may also carry `id`, a name for the server that outlives its
+-- address; see mpool_new for what it is for.
+--
+-- @param srv a URI string, or a {uri = ..., params = ..., id = ...} table
+-- @return a table with `uri` and, when the entry had them, `params` and `id`
+-- @raise when srv is neither of those, or its id is not a non-empty string
 local function normalize_server(srv)
     if type(srv) == 'string' then
         return {uri = srv}
     end
     if type(srv) == 'table' and type(srv.uri) == 'string' then
-        return {uri = srv.uri, params = srv.params}
+        if srv.id ~= nil and (type(srv.id) ~= 'string' or srv.id == '') then
+            error(0, "mpool: a server's id must be a non-empty string, got %s",
+                  srv.id == '' and 'an empty one' or type(srv.id))
+        end
+        return {uri = srv.uri, params = srv.params, id = srv.id}
     end
     error(0, 'mpool: a server must be a URI string or a {uri = ..., ' ..
              'params = ...} table, got %s', type(srv))
@@ -748,6 +755,9 @@ local function bucket_new(id, name, srv, options)
         id           = id,
         uri          = srv.uri,
         params       = srv.params,
+        -- The server's own name when the pool was given one -- the roles pass
+        -- the replicaset's -- and nil otherwise. `id` above is the position.
+        peer_id      = srv.id,
         name         = name,
         -- Both are answered by resolve_local() once the connection is up. A
         -- bucket used before that is treated as remote, which is correct if
@@ -1115,6 +1125,11 @@ local mpool_mt = {
 -- which is how a listener's transport parameters (`transport: ssl` and the
 -- client-side ssl_* files) reach net.box.
 --
+-- A table entry may carry `id` as well: a name for the server that does not
+-- change with its address. When every entry has one, the buckets are ordered
+-- by it; see the note in the body. Every entry or none -- a list where only
+-- some have an id has no single order -- and no two alike.
+--
 -- options.msg_count       -- messages per batch (default 1000)
 -- options.is_delayed      -- back the buckets with spaces (default false)
 -- options.user            -- net.box user for every connection
@@ -1129,7 +1144,8 @@ local mpool_mt = {
 -- @param servers array of server entries, at least one
 -- @param options optional table as above
 -- @return the pool, with its buckets started
--- @raise when servers is empty, when an entry is neither form, and -- unless
+-- @raise when servers is empty, when an entry is neither form, when the ids
+--  are given to some entries only or to two alike, and -- unless
 --  connect_async -- when a peer did not answer in time
 -- @function new
 local function mpool_new(name, servers, options)
@@ -1151,19 +1167,44 @@ local function mpool_new(name, servers, options)
         connected  = false,
     }, mpool_mt)
 
-    local sorted = {}
+    local sorted, with_id = {}, 0
     for _, server in ipairs(servers) do
-        table.insert(sorted, normalize_server(server))
+        local srv = normalize_server(server)
+        if srv.id ~= nil then
+            with_id = with_id + 1
+        end
+        table.insert(sorted, srv)
     end
     -- Every instance orders the buckets the same way, so bucket N means the
     -- same worker everywhere and guava_name() agrees across the cluster
-    -- regardless of the order the URIs were listed in. The key is the URI
-    -- string: the peer uuid the previous version sorted by is only known once
-    -- a connection has been made, and the order has to exist before that --
-    -- the whole point of connect_async is a pool that is complete before any
-    -- peer has answered. Every participant reads the same list out of the same
-    -- config, so the strings agree.
-    table.sort(sorted, function(a, b) return a.uri < b.uri end)
+    -- regardless of the order the servers were listed in. The key has to be
+    -- known before any connection is made -- the whole point of connect_async
+    -- is a pool that is complete before any peer has answered -- which is why
+    -- it is not the peer uuid the previous version sorted by.
+    --
+    -- It is the id when the servers have one, and the URI string otherwise.
+    -- Sorted by URI, bucket N is whoever has the N-th address, so a worker
+    -- that moves -- or a manual failover to another instance of its
+    -- replicaset -- hands most names to a different worker while every tuple
+    -- stays where it was: measured, a failover that changed one of three URIs
+    -- moved 66.8% of 10000 names. The roles give each worker its replicaset's
+    -- name as the id, which neither of those changes. Growing a job is not
+    -- covered: an id that sorts before the others still shifts every bucket
+    -- after it (see docs/api-design.md section 0, D10).
+    if with_id == 0 then
+        table.sort(sorted, function(a, b) return a.uri < b.uri end)
+    elseif with_id == #sorted then
+        table.sort(sorted, function(a, b) return a.id < b.id end)
+        for i = 2, #sorted do
+            if sorted[i].id == sorted[i - 1].id then
+                error(0, "mpool: the id '%s' is given to more than one server",
+                      sorted[i].id)
+            end
+        end
+    else
+        error(0, 'mpool: %d of %d servers carry an id; give one to every ' ..
+                 'server or to none', with_id, #sorted)
+    end
 
     for k, server in ipairs(sorted) do
         table.insert(self.buckets, bucket_new(k, name, server, {

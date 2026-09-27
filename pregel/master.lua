@@ -266,7 +266,9 @@ end
 --
 -- A worker URI is either a net.box URI string or a {uri = ..., params = ...}
 -- table, the form a Tarantool 3 config uses for a listener with transport
--- parameters.
+-- parameters. The table may also carry `id`, a name that outlives the worker's
+-- address; given to every worker, it is what the sharding orders them by (see
+-- mpool.new), and the workers must be given the same ones.
 --
 -- One master per process: the last one created is the one the RPC entry point
 -- talks to, so creating a second silently displaces the first.

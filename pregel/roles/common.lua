@@ -1253,8 +1253,8 @@ end
 
 --- Every participant of `job` running `role_name`: one per replicaset.
 --
--- Returns an array of {instance, uri} ordered by instance name, so two
--- instances reading the same config produce the same list.
+-- Returns an array of {instance, replicaset, uri} ordered by instance name, so
+-- two instances reading the same config produce the same list.
 --
 -- The job name is part of the test on purpose: one cluster can run several
 -- pregel jobs, and an instance belongs to the one whose name its own roles_cfg
@@ -1267,8 +1267,8 @@ end
 -- @param role the role name of the caller, for the messages
 -- @param role_name the role to look for, M.WORKER_ROLE or M.MASTER_ROLE
 -- @param job the job name to match against each instance's roles_cfg
--- @return array of {instance, uri}, ordered by instance name; `uri` may be
---  nil for an instance the config gives no address
+-- @return array of {instance, replicaset, uri}, ordered by instance name;
+--  `uri` may be nil for an instance the config gives no address
 -- @raise when a replicaset carrying the role names no single read-write
 --  instance
 -- @function instances_of
@@ -1289,8 +1289,9 @@ function M.instances_of(role, role_name, job)
                     table.insert(names, replicaset)
                 end
                 table.insert(by_replicaset[replicaset], {
-                    instance = instance,
-                    uri      = peer_uri(config, instance),
+                    instance   = instance,
+                    replicaset = replicaset,
+                    uri        = peer_uri(config, instance),
                 })
             end
         end
@@ -1309,7 +1310,7 @@ function M.instances_of(role, role_name, job)
     return rv
 end
 
---- URIs only, refusing an instance the config gives no address for.
+--- M.instances_of, refusing an instance the config gives no address for.
 --
 -- Refused rather than skipped: a silently shorter list is a different sharding
 -- from the one the other instances computed, and the job would then disagree
@@ -1318,18 +1319,18 @@ end
 -- @param role the role name of the caller
 -- @param role_name the role to look for
 -- @param job the job name
--- @return array of URIs, in instance-name order
+-- @return array of {instance, replicaset, uri}, in instance-name order, every
+--  one with a `uri`
 -- @raise when any discovered instance has no address
-local function uris_of(role, role_name, job)
-    local rv = {}
-    for _, found in ipairs(M.instances_of(role, role_name, job)) do
+local function reachable_of(role, role_name, job)
+    local rv = M.instances_of(role, role_name, job)
+    for _, found in ipairs(rv) do
         if found.uri == nil then
             error("%s: instance '%s' runs %s for job '%s' and the cluster " ..
                   'config gives it no address to reach it at; give it an ' ..
                   "'iproto.listen' entry, or an 'iproto.advertise.peer' one",
                   role, found.instance, role_name, job)
         end
-        table.insert(rv, found.uri)
     end
     return rv
 end
@@ -1343,20 +1344,37 @@ end
 -- `roles`, and a job whose master and workers disagreed about who the workers
 -- are is a job that shards the graph two ways.
 --
+-- Each worker is handed to mpool under its replicaset's name, which is what
+-- the buckets are ordered by -- not its URI, which moving the worker or a
+-- manual failover to another instance of the replicaset changes, and not the
+-- instance name, which that failover changes too. Ordered by URI, such a
+-- failover handed most vertex names to a different worker while every tuple
+-- stayed where it was (docs/api-design.md section 0, D10).
+--
 -- @param role the role name of the caller
 -- @param job the job name
--- @return array of worker URIs, in instance-name order
+-- @return array of {uri = ..., params = ..., id = <replicaset>} server entries,
+--  the form mpool.new takes
 -- @raise when the cluster config has no worker for that job
 -- @function discover_workers
 function M.discover_workers(role, job)
-    local uris = uris_of(role, M.WORKER_ROLE, job)
-    if #uris == 0 then
+    local found = reachable_of(role, M.WORKER_ROLE, job)
+    if #found == 0 then
         error("%s: no instance in the cluster config runs %s for job '%s'; " ..
               "a worker is an instance whose 'roles' names %s and whose " ..
               "roles_cfg for it says \"name: %s\"", role, M.WORKER_ROLE, job,
               M.WORKER_ROLE, job)
     end
-    return uris
+    local rv = {}
+    for i, worker in ipairs(found) do
+        local uri = worker.uri
+        if type(uri) == 'table' then
+            rv[i] = {uri = uri.uri, params = uri.params, id = worker.replicaset}
+        else
+            rv[i] = {uri = uri, id = worker.replicaset}
+        end
+    end
+    return rv
 end
 
 --- The single master of `job`, from the cluster config.
@@ -1372,18 +1390,18 @@ end
 --  does
 -- @function discover_master
 function M.discover_master(role, job)
-    local uris = uris_of(role, M.MASTER_ROLE, job)
-    if #uris == 0 then
+    local found = reachable_of(role, M.MASTER_ROLE, job)
+    if #found == 0 then
         error("%s: no instance in the cluster config runs %s for job '%s'; " ..
               "the master is an instance whose 'roles' names %s and whose " ..
               "roles_cfg for it says \"name: %s\"", role, M.MASTER_ROLE, job,
               M.MASTER_ROLE, job)
     end
-    if #uris > 1 then
+    if #found > 1 then
         error("%s: %d instances in the cluster config run %s for job '%s'; " ..
-              "a job has one master", role, #uris, M.MASTER_ROLE, job)
+              "a job has one master", role, #found, M.MASTER_ROLE, job)
     end
-    return uris[1]
+    return found[1].uri
 end
 
 -------------------------------------------------------------------------------
