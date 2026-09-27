@@ -288,7 +288,7 @@ end
 -- output and adding a hand-made task to it would make it something else. The
 -- schema is the generator's own.
 local function labels_with_a_starved_task(dir)
-    local ocf = require('pregel.avro.ocf')
+    local ocf = require('avro.ocf')
     local path = fio.pathjoin(dir, 'labels.avro')
 
     local source = ocf.open(fio.pathjoin(helper.ROOT, FIXTURE, 'labels.avro'),
@@ -327,7 +327,7 @@ end
 -- Thirty of them, so `min_labels` is cleared and the task reaches training on
 -- its own merits: what it cannot do is be *scored*.
 local function labels_with_a_one_class_task(dir)
-    local ocf = require('pregel.avro.ocf')
+    local ocf = require('avro.ocf')
     local path = fio.pathjoin(dir, 'labels.avro')
 
     local source = ocf.open(fio.pathjoin(helper.ROOT, FIXTURE, 'labels.avro'),
@@ -510,7 +510,7 @@ end
 g.test_a_labels_file_with_no_task_is_refused_at_startup = function()
     local dir = fio.tempdir()
     local path = fio.pathjoin(dir, 'labels.avro')
-    local writer = require('pregel.avro.ocf').open(path, {
+    local writer = require('avro.ocf').open(path, {
         mode   = 'w',
         schema = {
             type = 'record', name = 'Label',

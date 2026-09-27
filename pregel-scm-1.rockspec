@@ -1,14 +1,16 @@
 package = 'pregel'
 version = 'scm-1'
 source = {
-    url    = 'git+https://github.com/bigbes/pregel.git',
-    branch = 'bigbes/gh-no-tarantool-v3',
+    url    = 'git+https://github.com/tarantool-contrib/pregel.git',
+    branch = 'master',
 }
 description = {
     summary  = 'Pregel graph processing model for Tarantool',
-    homepage = 'https://github.com/bigbes/pregel',
-    license  = 'BSD',
+    homepage = 'https://github.com/tarantool-contrib/pregel',
+    license  = 'BSD-2-Clause',
 }
+-- tarantool-avro is optional and deliberately not listed: only
+-- loader.avro_files needs it, and it is required on first use there.
 dependencies = {
     'lua ~> 5.1',
 }
@@ -29,22 +31,11 @@ build = {
         ['pregel.utils.collections'] = 'pregel/utils/collections.lua',
         ['pregel.utils.copy']        = 'pregel/utils/copy.lua',
         ['pregel.utils.strict']      = 'pregel/utils/strict.lua',
-        ['pregel.avro']              = 'pregel/avro/init.lua',
-        ['pregel.avro.schema']       = 'pregel/avro/schema.lua',
-        ['pregel.avro.codec']        = 'pregel/avro/codec.lua',
-        ['pregel.avro.deflate']      = 'pregel/avro/deflate.lua',
-        ['pregel.avro.ocf']          = 'pregel/avro/ocf.lua',
-        ['pregel.avro.resolve']      = 'pregel/avro/resolve.lua',
         ['pregel.math.vector']       = 'pregel/math/vector.lua',
         ['pregel.math.gd']           = 'pregel/math/gd.lua',
         ['pregel.math.auc']          = 'pregel/math/auc.lua',
         ['pregel.math.percentile']   = 'pregel/math/percentile.lua',
         ['pregel.math']              = 'pregel/math/init.lua',
         ['pregel.math.mf']           = 'pregel/math/mf.lua',
-        ['pregel.compress']          = 'pregel/compress/init.lua',
-        ['pregel.compress.lib']      = 'pregel/compress/lib.lua',
-        ['pregel.compress.zlib']     = 'pregel/compress/zlib.lua',
-        ['pregel.compress.zstd']     = 'pregel/compress/zstd.lua',
-        ['pregel.compress.lz4']      = 'pregel/compress/lz4.lua',
     },
 }

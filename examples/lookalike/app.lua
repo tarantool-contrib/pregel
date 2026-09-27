@@ -63,7 +63,7 @@ local percentile = require('pregel.math.percentile')
 local vector     = require('pregel.math.vector')
 
 local loader = require('pregel.loader')
-local ocf    = require('pregel.avro.ocf')
+local ocf    = require('avro.ocf')
 local common = require('examples.common')
 
 local HERE = common.here()

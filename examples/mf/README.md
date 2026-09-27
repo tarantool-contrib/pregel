@@ -142,7 +142,7 @@ Paths are relative to this directory; an absolute one is used as it stands.
 file, and a ratings dataset is one file that is both — every record names two
 vertices and one edge, and the edge has to exist in both directions. So
 `app.master_preload` builds a loader with `loader.new` and reads `train.avro`
-through `pregel.avro.ocf` itself, in **two passes**: the first declares each
+through `avro.ocf` itself, in **two passes**: the first declares each
 user and item the first time it appears, the second emits both directions of
 every rating. Two passes rather than one because what is then held in memory is
 the set of vertex names and not the ratings.

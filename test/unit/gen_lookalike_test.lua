@@ -11,7 +11,7 @@ local fio   = require('fio')
 local json  = require('json')
 local popen = require('popen')
 
-local avro = require('pregel.avro')
+local avro = require('avro')
 
 local g = t.group('gen_lookalike')
 

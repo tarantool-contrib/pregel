@@ -98,7 +98,7 @@ local log = require('log')
 
 local loader = require('pregel.loader')
 local mf     = require('pregel.math.mf')
-local ocf    = require('pregel.avro.ocf')
+local ocf    = require('avro.ocf')
 
 local common = require('examples.common')
 

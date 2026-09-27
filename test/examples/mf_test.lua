@@ -22,7 +22,7 @@ local t   = require('luatest')
 
 local Cluster = require('luatest.cluster')
 
-local ocf    = require('pregel.avro.ocf')
+local ocf    = require('avro.ocf')
 local mf     = require('pregel.math.mf')
 local helper = require('test.examples.cluster')
 

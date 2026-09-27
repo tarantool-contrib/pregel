@@ -26,9 +26,15 @@ export VARDIR ?= /tmp/pregel-t/$(firstword $(shell printf '%s' '$(CURDIR)' | cks
 
 .PHONY: deps lint lint-all test test-under test-ee
 
+# tarantool-avro is an optional dependency of the library but a hard one of the
+# suite: loader.avro_files, the examples and the tools all read Avro. It is
+# installed from its repository until there is a rocks server to publish to.
+AVRO_ROCKSPEC ?= https://raw.githubusercontent.com/tarantool-contrib/tarantool-avro/master/tarantool-avro-scm-1.rockspec
+
 deps:
 	tt rocks install luatest
 	tt rocks install luacheck
+	tt rocks install $(AVRO_ROCKSPEC)
 
 # The whole tree, core included: pregel/ carried an exemption while it was
 # still 2016 code, and the Tarantool 3 port removed the need for it.

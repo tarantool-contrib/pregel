@@ -41,7 +41,7 @@
 local fio = require('fio')
 
 local mf  = require('pregel.math.mf')
-local ocf = require('pregel.avro.ocf')
+local ocf = require('avro.ocf')
 
 local common = require('examples.common')
 

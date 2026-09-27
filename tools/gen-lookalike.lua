@@ -53,7 +53,7 @@ local root       = fio.dirname(script_dir)
 package.path = string.format('%s/?.lua;%s/?/init.lua;%s', root, root,
                              package.path)
 
-local avro = require('pregel.avro')
+local avro = require('avro')
 
 local USER_SCHEMA = {
     type = 'record', name = 'User',

@@ -14,14 +14,34 @@ local fio  = require('fio')
 local log  = require('log')
 local json = require('json')
 
-local avro_ocf = require('pregel.avro.ocf')
-
 local strict      = require('pregel.utils.strict')
 local capture     = require('pregel.utils.copy').capture
 local utils       = require('pregel.utils')
 local is_callable = utils.is_callable
 local error       = utils.error
 local syserror    = utils.syserror
+
+-- The tarantool-avro rock is an optional dependency: only avro_files needs it,
+-- so it is required on the first call of that rather than when this module
+-- loads, and a pregel without it runs every other loader.
+local avro_ocf_module
+
+--- The `avro.ocf` module, required on first use.
+--
+-- @return the module
+-- @raise naming the rock to install when it cannot be required
+local function avro_ocf()
+    if avro_ocf_module == nil then
+        local ok, mod = pcall(require, 'avro.ocf')
+        if not ok then
+            error(3, 'loader.avro_files needs the tarantool-avro rock ' ..
+                  '(https://github.com/tarantool-contrib/tarantool-avro): %s',
+                  tostring(mod))
+        end
+        avro_ocf_module = mod
+    end
+    return avro_ocf_module
+end
 
 -- How many edges of one source travel in a single 'edge.store'.
 local EDGE_BATCH_SIZE = 1000
@@ -342,7 +362,7 @@ local function schema_of_file(path, what)
     if not fio.path.exists(path) then
         error("options.%s: no such file: '%s'", what, path)
     end
-    local ok, sc = pcall(avro_ocf.schema_of, path)
+    local ok, sc = pcall(avro_ocf().schema_of, path)
     if not ok then
         error("options.%s: cannot read '%s': %s", what, path, tostring(sc))
     end
@@ -401,6 +421,9 @@ local function loader_avro_files(instance, options)
         error('loader.avro_files: options must be a table, got %s',
               type(options))
     end
+    -- Before any option is looked at, so that a missing rock is reported as
+    -- that and not as whatever the first option check happens to trip over.
+    avro_ocf()
 
     local vertices_path = options.vertices
     local edges_path    = options.edges
@@ -446,7 +469,7 @@ local function loader_avro_files(instance, options)
 
     --- Walk an OCF file, closing it whether or not the walk raised.
     local function each_record(path, handler)
-        local reader = avro_ocf.open(path, {mode = 'r'})
+        local reader = avro_ocf().open(path, {mode = 'r'})
         local ok, err = pcall(function()
             for record in reader:records() do
                 handler(record)

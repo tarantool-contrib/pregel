@@ -442,3 +442,51 @@ g.test_options_must_be_a_table = function()
         loader.avro_files(recorder(), VERTICES)
     end)
 end
+
+-------------------------------------------------------------------------------
+-- Without the tarantool-avro rock
+-------------------------------------------------------------------------------
+
+g.test_a_missing_avro_rock_is_named = function()
+    -- A fresh pregel.loader, whose cached avro.ocf is gone, and an avro.ocf
+    -- that fails to require the way a rock that is not installed does.
+    local saved_loader = package.loaded['pregel.loader']
+    local saved_ocf    = package.loaded['avro.ocf']
+    package.loaded['pregel.loader'] = nil
+    package.loaded['avro.ocf']      = nil
+    package.preload['avro.ocf'] = function()
+        error("module 'avro.ocf' not found")
+    end
+    local ok, err = pcall(function()
+        return require('pregel.loader').avro_files(recorder(), {
+            vertices = VERTICES, edges = EDGES,
+            vertex_name = 'name', edge_src = 'src', edge_dst = 'dst',
+        })
+    end)
+    package.preload['avro.ocf']     = nil
+    package.loaded['avro.ocf']      = saved_ocf
+    package.loaded['pregel.loader'] = saved_loader
+
+    t.assert_not(ok)
+    t.assert_str_contains(tostring(err), 'needs the tarantool-avro rock')
+    t.assert_str_contains(tostring(err), "module 'avro.ocf' not found")
+end
+
+g.test_other_loaders_do_not_need_the_avro_rock = function()
+    local saved_loader = package.loaded['pregel.loader']
+    local saved_ocf    = package.loaded['avro.ocf']
+    package.loaded['pregel.loader'] = nil
+    package.loaded['avro.ocf']      = nil
+    package.preload['avro.ocf'] = function()
+        error("module 'avro.ocf' not found")
+    end
+    local ok, err = pcall(function()
+        local fresh = require('pregel.loader')
+        return fresh.new(recorder(), function() end)
+    end)
+    package.preload['avro.ocf']     = nil
+    package.loaded['avro.ocf']      = saved_ocf
+    package.loaded['pregel.loader'] = saved_loader
+
+    t.assert(ok, tostring(err))
+end
