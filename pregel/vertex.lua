@@ -19,39 +19,13 @@
 --
 -- @module pregel.vertex
 
-local json    = require('json')
-local msgpack = require('msgpack')
+local json = require('json')
 
 local table_clear = require('table.clear')
 
---- A copy of `value` that shares no table with it, as the wire would carry it.
---
--- The vertex API hands tables to the runtime, which used to hold them by
--- reference until something serialised them: the flush at the end of the
--- superstep, or -- with the table queue engine and a receiver on this worker --
--- nothing at all, so the receiver's queue held the sender's own table.
--- Capturing when the call is made is what lets the caller reuse or change the
--- table as soon as the call returns, and what gives a receiver a table of its
--- own (docs/api-design.md section 0, D8).
---
--- A msgpack round trip rather than a deep copy: the value then comes out as the
--- space engine and net.box would make it, whichever engine carries it. Tables
--- are not the only values that can be changed in place -- cdata can too, and a
--- datetime's set() rewrites the very object -- so cdata takes the round trip
--- as well: a datetime, decimal or uuid comes back as a new object of its kind.
--- Strings, numbers and booleans cannot be changed through a reference and are
--- returned as they are.
---
--- @param value the payload
--- @return the payload, or a copy of it when it is a table or cdata
-local function capture(value)
-    local kind = type(value)
-    if kind ~= 'table' and kind ~= 'cdata' then
-        return value
-    end
-    local copy = msgpack.decode(msgpack.encode(value))
-    return copy
-end
+-- What send_message, add_vertex and add_edge hand to the runtime instead of
+-- the caller's own table; see its comment in pregel/utils/copy.lua.
+local capture = require('pregel.utils.copy').capture
 
 -- Declared here so the private compute() below can reach vote_halt: the
 -- default halt has to go through the public method rather than assign

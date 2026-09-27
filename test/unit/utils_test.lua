@@ -253,3 +253,32 @@ g.test_copy_shallow_is_removed = function()
         return copy.shallow
     end)
 end
+
+--
+-- copy.capture
+--
+
+-- Both kinds of value that can be changed through a reference come back as
+-- objects of their own: a table, and cdata such as a datetime, whose set()
+-- rewrites the object it is called on.
+g.test_capture_shares_nothing_with_the_original = function()
+    local orig = {name = 'a', nested = {1, 2}}
+    local dup = copy.capture(orig)
+    t.assert_equals(dup, orig)
+    orig.name = 'b'
+    orig.nested[1] = 99
+    t.assert_equals(dup, {name = 'a', nested = {1, 2}})
+
+    local datetime = require('datetime')
+    local when = datetime.new{year = 2020, month = 1, day = 1}
+    local kept = copy.capture(when)
+    when:set{year = 2030}
+    t.assert_equals(kept.year, 2020)
+end
+
+g.test_capture_passes_immutable_values_as_they_are = function()
+    t.assert_equals(copy.capture('str'), 'str')
+    t.assert_equals(copy.capture(7), 7)
+    t.assert_equals(copy.capture(false), false)
+    t.assert_equals(copy.capture(nil), nil)
+end
