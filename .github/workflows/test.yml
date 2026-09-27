@@ -1,0 +1,71 @@
+name: Test
+
+on:
+  push:
+    branches: [ master ]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  luacheck:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: tarantool/setup-tarantool@v4
+        with:
+          tarantool-version: '3.8'
+
+      - name: Setup tt
+        run: |
+          curl -L https://tarantool.io/release/2/installer.sh | sudo bash
+          sudo apt-get install -y tt
+
+      # 0.26.0 is the newest luacheck on rocks.tarantool.org; the 0.26.1
+      # the organization's starter workflow pins does not exist there.
+      - name: Install luacheck
+        run: tt rocks install luacheck 0.26.0
+
+      - name: Run luacheck
+        run: .rocks/bin/luacheck .
+
+  luatest:
+    strategy:
+      fail-fast: false
+      matrix:
+        # Only 3.8 is supported for now; the oldest and the newest supported
+        # series belong here once there is more than one.
+        tarantool: [ '3.8' ]
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: tarantool/setup-tarantool@v4
+        with:
+          tarantool-version: ${{ matrix.tarantool }}
+
+      - name: Setup tt
+        run: |
+          curl -L https://tarantool.io/release/2/installer.sh | sudo bash
+          sudo apt-get install -y tt
+
+      - name: Install the module
+        run: tt rocks make
+
+      # Optional for the library, needed by the Avro loader tests, the
+      # examples and the tools.
+      - name: Install tarantool-avro
+        run: tt rocks install https://raw.githubusercontent.com/tarantool-contrib/tarantool-avro/master/tarantool-avro-scm-1.rockspec
+
+      - name: Install luatest
+        run: tt rocks install luatest
+
+      - name: Run tests
+        run: .rocks/bin/luatest -v test/
