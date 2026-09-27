@@ -119,6 +119,98 @@ g.test_loader_new_rejects_a_non_callable = function()
 end
 
 -------------------------------------------------------------------------------
+-- When a value is captured
+-------------------------------------------------------------------------------
+
+-- Defect: store_vertex, store_edge and store_edges_batch handed their table to
+-- the mpool bucket by reference, and it stayed a reference until the flush, so
+-- a loader that reused one table stored its last state every time. The
+-- recorder keeps `args` exactly as the loader handed it over, which is what
+-- makes the copy observable here. A recorder has no loader_capture, which is
+-- the default: the copy.
+
+g.test_store_vertex_captures_a_reused_table = function()
+    local rec = recorder()
+    local named = {}
+    rec.obtain_name = function(vertex)
+        table.insert(named, vertex)
+        return vertex.name
+    end
+    local l = loader.new(rec, function() end)
+
+    local value = {name = 'a', value = 1}
+    t.assert_equals(l:store_vertex(value), 'a')
+    value.name, value.value = 'b', 2
+    t.assert_equals(l:store_vertex(value), 'b')
+
+    t.assert_equals(rec.puts, {
+        {msg = 'vertex.store', args = {name = 'a', value = 1}},
+        {msg = 'vertex.store', args = {name = 'b', value = 2}},
+    })
+    t.assert_equals(rec.routed, {'a', 'b'})
+    -- Named from the very copy that is stored, as add_vertex does, so the name
+    -- it is routed by and the value that arrives cannot disagree.
+    t.assert_is(named[1], rec.puts[1].args)
+    t.assert_is(named[2], rec.puts[2].args)
+end
+
+g.test_store_edge_captures_a_reused_value = function()
+    local rec = recorder()
+    local l = loader.new(rec, function() end)
+
+    local weight = {w = 1}
+    l:store_edge('alice', 'bob', weight)
+    weight.w = 2
+    l:store_edge('carol', 'dave', weight)
+
+    t.assert_equals(rec.puts, {
+        {msg = 'edge.store', args = {'alice', {{'bob', {w = 1}}}}},
+        {msg = 'edge.store', args = {'carol', {{'dave', {w = 2}}}}},
+    })
+    t.assert_equals(rec.routed, {'alice', 'carol'})
+end
+
+g.test_store_edges_batch_captures_a_reused_list = function()
+    local rec = recorder()
+    local l = loader.new(rec, function() end)
+
+    -- Cleared and refilled between the calls, the way a loader keeps one
+    -- buffer for every batch.
+    local list = {{'bob', 1}, {'carol', 2}}
+    l:store_edges_batch('alice', list)
+    table.clear(list)
+    list[1] = {'alice', 3}
+    l:store_edges_batch('dave', list)
+
+    t.assert_equals(rec.puts, {
+        {msg = 'edge.store', args = {'alice', {{'bob', 1}, {'carol', 2}}}},
+        {msg = 'edge.store', args = {'dave', {{'alice', 3}}}},
+    })
+    t.assert_equals(rec.routed, {'alice', 'dave'})
+end
+
+-- loader_capture = false is the way out of the copy, for a bulk load that
+-- builds a fresh table per record and does not want to pay for a round trip
+-- per call. The loader then queues what it was handed, as it used to, and the
+-- recorder sees the caller's own tables.
+g.test_without_loader_capture_the_caller_tables_are_queued = function()
+    local rec = recorder()
+    rec.loader_capture = false
+    local l = loader.new(rec, function() end)
+
+    local vertex = {name = 'a'}
+    local weight = {w = 1}
+    local list = {{'bob', 1}}
+    l:store_vertex(vertex)
+    l:store_edge('a', 'bob', weight)
+    l:store_edges_batch('a', list)
+
+    t.assert_is(rec.puts[1].args, vertex)
+    t.assert_is(rec.puts[2].args[2][1][2], weight)
+    t.assert_is(rec.puts[3].args[2], list)
+end
+
+-------------------------------------------------------------------------------
 -- graph_edges_f, against slices of the real fixture
 -------------------------------------------------------------------------------
 

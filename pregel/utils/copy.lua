@@ -34,7 +34,9 @@ end
 -- nothing at all, so the receiver's queue held the sender's own table.
 -- Capturing when the call is made is what lets the caller reuse or change the
 -- table as soon as the call returns, and what gives a receiver a table of its
--- own (docs/api-design.md section 0, D8).
+-- own (docs/api-design.md section 0, D8). A loader's store_* calls had the
+-- same defect and take the same copy, unless the instance they push through
+-- was built with loader_capture = false (see pregel/loader.lua).
 --
 -- A msgpack round trip rather than a deep copy: the value then comes out as the
 -- space engine and net.box would make it, whichever engine carries it. Tables

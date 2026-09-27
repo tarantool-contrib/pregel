@@ -17,6 +17,7 @@ local json = require('json')
 local avro_ocf = require('pregel.avro.ocf')
 
 local strict      = require('pregel.utils.strict')
+local capture     = require('pregel.utils.copy').capture
 local utils       = require('pregel.utils')
 local is_callable = utils.is_callable
 local error       = utils.error
@@ -34,16 +35,43 @@ local SECTION_EDGES    = 2
 --
 -- Every one of them only queues: nothing reaches a worker until flush(), or
 -- until an mpool bucket fills on its own.
+--
+-- What they queue is a copy taken at the call -- pregel.utils.copy.capture,
+-- the one the vertex API makes -- so a loader may reuse or change a table as
+-- soon as the call returns. The bucket keeps what it is handed until the
+-- flush, and a loader that refilled one table per record used to store its
+-- last state every time.
+--
+-- An instance built with loader_capture = false turns the copy off, for a
+-- bulk load that builds a fresh table per record and would pay a msgpack round
+-- trip per call for nothing. Such a loader must not reuse a table.
 local function loader_methods(instance)
+    --- What a store_* call queues of the value it is handed.
+    --
+    -- Read from the instance at the call, like obtain_name and mpool. Only an
+    -- explicit false turns the copy off: worker.new and master.new set the
+    -- field, and an instance stand-in that never heard of it gets the default.
+    local function kept(value)
+        if instance.loader_capture == false then
+            return value
+        end
+        return capture(value)
+    end
+
     return {
         --- Queue one vertex for the worker that owns it.
         --
         -- no conflict resolving, resets the vertex to this state
         --
+        -- The vertex is named from the copy that is queued, as add_vertex does
+        -- in the vertex API: the worker names it again from what arrives, and
+        -- the name it was routed by has to be that one.
+        --
         -- @param vertex the vertex value; the instance's obtain_name names it
         -- @return the name it was stored under
         -- @function store_vertex
         store_vertex = function(_, vertex)
+            vertex = kept(vertex)
             local id = instance.obtain_name(vertex)
             instance.mpool:by_id(id):put('vertex.store', vertex)
             return id
@@ -60,17 +88,21 @@ local function loader_methods(instance)
             -- '{src {dest, value}}' parsed as a call of the string src, so
             -- store_edge raised "attempt to call a string value" every time.
             -- edge.store takes (source, list-of-edges).
-            instance.mpool:by_id(src):put('edge.store', {src, {{dest, value}}})
+            instance.mpool:by_id(src):put('edge.store',
+                                          {src, {{dest, kept(value)}}})
         end,
         --- Queue several edges of one source in a single message.
         --
         -- no conflict resolving, may produce duplicates
         --
+        -- The list is captured whole, in one round trip rather than one per
+        -- edge.
+        --
         -- @param src source vertex name
         -- @param list array of {destination_name, edge_value}
         -- @function store_edges_batch
         store_edges_batch = function(_, src, list)
-            instance.mpool:by_id(src):put('edge.store', {src, list})
+            instance.mpool:by_id(src):put('edge.store', {src, kept(list)})
         end,
         --- Queue a vertex together with all of its outbound edges.
         --

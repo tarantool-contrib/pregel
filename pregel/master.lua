@@ -251,6 +251,11 @@ end
 --                           may carry its own 'user:password@host:port'
 -- options.obtain_name    -- callable(value) -> vertex name (required)
 -- options.pool_size      -- messages per batch (default 1000)
+-- options.loader_capture -- a loader run through this master copies what each
+--                           store_* call is handed, so the caller may reuse
+--                           the table (default true); false queues the
+--                           caller's own table, for a load that never reuses
+--                           one and does not want a round trip per call
 -- options.master_preload -- callable(self, preload_args) -> loader, or a
 --                           loader, or nil for a master that only coordinates
 -- options.preload_args   -- passed to master_preload
@@ -278,8 +283,9 @@ end
 -- @return the master object
 -- @raise when name or options are the wrong type, when obtain_name is not
 --  callable, when max_supersteps is not a positive integer, when
---  master_preload is neither a function, a table nor nil, and -- unless
---  connect_async -- when a worker did not answer in time
+--  loader_capture is not a boolean, when master_preload is neither a
+--  function, a table nor nil, and -- unless connect_async -- when a worker
+--  did not answer in time
 -- @function new
 local function master_new(name, options)
     assert(type(name) == 'string', 'name must be a string')
@@ -300,6 +306,12 @@ local function master_new(name, options)
             max_supersteps > 0 and max_supersteps % 1 == 0),
            'options.max_supersteps must be a positive integer or nil')
 
+    -- Read by every loader built over this instance; see pregel/loader.lua.
+    local loader_capture = options.loader_capture
+    if loader_capture == nil then loader_capture = true end
+    assert(type(loader_capture) == 'boolean',
+           'options.loader_capture must be boolean or nil')
+
     local self = setmetatable({
         name            = name,
         preload_func    = nil,
@@ -312,6 +324,7 @@ local function master_new(name, options)
             connect_timeout = options.connect_timeout,
         }),
         obtain_name     = obtain_name,
+        loader_capture  = loader_capture,
         aggregators     = {},
         superstep_count = 0,
         max_supersteps  = max_supersteps,

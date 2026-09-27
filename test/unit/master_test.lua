@@ -289,3 +289,33 @@ g.test_max_supersteps_accepts_a_positive_integer_and_nil = function()
     t.assert_equals(unbounded.max_supersteps, nil)
     unbounded:stop()
 end
+
+-- master_preload runs a loader through the master, and a loader reads
+-- loader_capture off the instance it was built with.
+g.test_loader_capture_must_be_a_boolean = function()
+    for _, bad in ipairs({'yes', 0, {}}) do
+        t.assert_error_msg_contains(
+            'options.loader_capture must be boolean or nil',
+            function()
+                master.new(fresh_name(), {
+                    workers = {URI}, obtain_name = obtain_name,
+                    loader_capture = bad,
+                })
+            end,
+            'accepted ' .. tostring(bad))
+    end
+end
+
+g.test_loader_capture_defaults_to_true = function()
+    local m = master.new(fresh_name(), {
+        workers = {URI}, obtain_name = obtain_name,
+    })
+    t.assert_equals(m.loader_capture, true)
+    m:stop()
+
+    local off = master.new(fresh_name(), {
+        workers = {URI}, obtain_name = obtain_name, loader_capture = false,
+    })
+    t.assert_equals(off.loader_capture, false)
+    off:stop()
+end

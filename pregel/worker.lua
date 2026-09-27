@@ -908,6 +908,11 @@ end
 -- options.queue_engine   -- 'space' (default) or 'table'
 -- options.pool_size      -- messages per batch (default 1000)
 -- options.delayed_push   -- back the mpool buckets with spaces (default false)
+-- options.loader_capture -- a loader run through this worker copies what each
+--                           store_* call is handed, so the caller may reuse
+--                           the table (default true); false queues the
+--                           caller's own table, for a load that never reuses
+--                           one and does not want a round trip per call
 -- options.worker_context -- passed through to vertex:get_worker_context()
 -- options.worker_preload -- callable(self, preload_args) -> loader, or a loader
 -- options.preload_args   -- passed to worker_preload
@@ -939,9 +944,10 @@ end
 -- @param options table as above
 -- @return the worker object
 -- @raise when name or options are the wrong type, when compute or obtain_name
---  is not callable, when combiner, squash_only, queue_engine or master are
---  the wrong shape, when worker_preload is neither a function, a table nor
---  nil, and -- unless connect_async -- when a peer did not answer in time
+--  is not callable, when combiner, squash_only, queue_engine, loader_capture
+--  or master are the wrong shape, when worker_preload is neither a function,
+--  a table nor nil, and -- unless connect_async -- when a peer did not answer
+--  in time
 -- @function new
 local function worker_new(name, options)
     assert(type(name) == 'string', 'name must be a string')
@@ -964,6 +970,10 @@ local function worker_new(name, options)
     if squash_only == nil then squash_only = false end
     local queue_engine = options.queue_engine or 'space'
 
+    -- Read by every loader built over this instance; see pregel/loader.lua.
+    local loader_capture = options.loader_capture
+    if loader_capture == nil then loader_capture = true end
+
     assert(is_callable(obtain_name),     'options.obtain_name must be callable')
     assert(is_callable(compute),         'options.compute must be callable')
     assert(type(combiner) == 'nil' or is_callable(combiner),
@@ -975,6 +985,8 @@ local function worker_new(name, options)
            'options.squash_only must be boolean or "nil"')
     assert(queue_engine == 'space' or queue_engine == 'table',
            'options.queue_engine must be "space", "table" or "nil"')
+    assert(type(loader_capture) == 'boolean',
+           'options.loader_capture must be boolean or "nil"')
 
     local data_space, tm_space = create_spaces(name)
 
@@ -994,6 +1006,7 @@ local function worker_new(name, options)
         aggregators    = {},
         in_progress    = 0,
         obtain_name    = obtain_name,
+        loader_capture = loader_capture,
         worker_context = wrk_context,
         data_space              = data_space,
         topology_mutation_space = tm_space,

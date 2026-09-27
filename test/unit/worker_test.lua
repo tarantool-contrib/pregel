@@ -5,6 +5,7 @@ local box_helper = require('test.helpers.box')
 local worker = require('pregel.worker')
 local master = require('pregel.master')
 local queue = require('pregel.queue')
+local loader = require('pregel.loader')
 
 local g = t.group('worker')
 
@@ -287,6 +288,30 @@ g.test_rejects_unknown_queue_engine = function()
             queue_engine = 'mmap',
         })
     end)
+end
+
+-- A loader reads loader_capture off the instance it was built with, so the
+-- instance is where the option has to land: a copy by default, and false only
+-- when asked for.
+g.test_loader_capture_reaches_the_instance = function()
+    local w = make_worker()
+    t.assert_equals(w.loader_capture, true)
+    drop_worker(w)
+
+    local off = make_worker({loader_capture = false})
+    t.assert_equals(off.loader_capture, false)
+    drop_worker(off)
+end
+
+g.test_rejects_a_non_boolean_loader_capture = function()
+    t.assert_error_msg_contains(
+        'options.loader_capture must be boolean or "nil"', function()
+            worker.new(fresh_name(), {
+                workers = {URI}, master = URI,
+                obtain_name = obtain_name, compute = function() end,
+                loader_capture = 'yes',
+            })
+        end)
 end
 
 g.test_worker_context_is_passed_through = function()
@@ -863,6 +888,29 @@ g.test_topology_payloads_are_captured_at_the_call = function()
     t.assert_equals(w.data_space:get{'b'}[4], {{'c', {w = 1}}})
     t.assert_equals(w.data_space:get{'a'}[4], {{'d', {w = 1}}})
     m:stop()
+    drop_worker(w)
+end
+
+-- And in the loader: store_vertex handed its table to the pool by reference
+-- until the flush, so a loader that reused one table stored its last state as
+-- many times as it called. Through this worker's own bucket the flush hands
+-- vertex_store that very table twice, and data_<name> held only 'b' -- vertex
+-- 'a' was gone.
+g.test_a_loader_that_reuses_its_table_stores_every_vertex = function()
+    local w = make_worker()
+    local l = loader.new(w, function(self)
+        local value = {name = 'a'}
+        self:store_vertex(value)
+        value.name = 'b'
+        self:store_vertex(value)
+        self:flush()
+    end)
+    l()
+
+    t.assert_equals(vertices_of(w), {
+        a = {halted = false, value = {name = 'a'}, edges = {}},
+        b = {halted = false, value = {name = 'b'}, edges = {}},
+    })
     drop_worker(w)
 end
 
