@@ -788,6 +788,47 @@ for _, engine in ipairs({'space', 'table'}) do
     end
 end
 
+-- Not only tables can be changed in place: a datetime is cdata, and
+-- datetime:set() rewrites the object it is called on. The capture left
+-- everything that was not a table alone, so a datetime set after the send was
+-- received as set.
+for _, engine in ipairs({'space', 'table'}) do
+    g['test_a_datetime_payload_is_captured_at_send_with_the_' .. engine ..
+      '_engine'] = function()
+        local datetime = require('datetime')
+        local sent = datetime.new{year = 2020, month = 1, day = 1}
+        local seen = {}
+        local w, name = make_worker({
+            queue_engine = engine,
+            compute = function(self)
+                if self:get_name() == 'alice' then
+                    if self:get_superstep() == 1 then
+                        self:send_message('bob', sent)
+                        sent:set{year = 2030}
+                    end
+                else
+                    for _, message in self:pairs_messages() do
+                        table.insert(seen, message.year)
+                    end
+                end
+                self:vote_halt(false)
+            end,
+        })
+        w.data_space:replace{'alice', false, {name = 'alice'}, {}}
+        w.data_space:replace{'bob', false, {name = 'bob'}, {}}
+        w.in_progress = 2
+        local m = make_master(name)
+
+        w:run_superstep(1)
+        w:after_superstep()
+        w:run_superstep(2)
+
+        t.assert_equals(seen, {2020}, 'bob reads the datetime as it was sent')
+        m:stop()
+        drop_worker(w)
+    end
+end
+
 -- The same defect in the topology calls: the values add_vertex and add_edge
 -- hand to the runtime waited in the pool by reference until the flush.
 g.test_topology_payloads_are_captured_at_the_call = function()

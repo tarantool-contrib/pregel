@@ -35,14 +35,18 @@ local table_clear = require('table.clear')
 -- own (docs/api-design.md section 0, D8).
 --
 -- A msgpack round trip rather than a deep copy: the value then comes out as the
--- space engine and net.box would make it, whichever engine carries it. Anything
--- that is not a table cannot be changed through a reference and is returned as
--- it is.
+-- space engine and net.box would make it, whichever engine carries it. Tables
+-- are not the only values that can be changed in place -- cdata can too, and a
+-- datetime's set() rewrites the very object -- so cdata takes the round trip
+-- as well: a datetime, decimal or uuid comes back as a new object of its kind.
+-- Strings, numbers and booleans cannot be changed through a reference and are
+-- returned as they are.
 --
 -- @param value the payload
--- @return the payload, or a copy of it when it is a table
+-- @return the payload, or a copy of it when it is a table or cdata
 local function capture(value)
-    if type(value) ~= 'table' then
+    local kind = type(value)
+    if kind ~= 'table' and kind ~= 'cdata' then
         return value
     end
     local copy = msgpack.decode(msgpack.encode(value))
