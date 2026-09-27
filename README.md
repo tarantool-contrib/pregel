@@ -382,11 +382,13 @@ Both roles take:
 * `app_cfg` — an opaque table, handed to the app module and never read by the
   roles. See [what an app module is told](#what-an-app-module-is-told).
 * `pool_size` — messages per outgoing batch (default 1000).
-* `loader_capture` (default `true`) — the role's loaders (`master_preload`,
-  `worker_preload`) copy each value a `store_*` call is handed, so the table
-  can be reused as soon as the call returns. `false` skips that msgpack round
-  trip, for a loader that builds a fresh table per record — one that reuses a
-  table then stores its last state every time.
+* `loader_capture` (default `true`) — the loaders `pregel.loader` builds over
+  the role's instance, which is what `master_preload` and `worker_preload`
+  usually return, copy each value a `store_*` call is handed, so the table can
+  be reused as soon as the call returns. `false` skips that msgpack round trip,
+  for a loader that builds a fresh table per record — one that reuses a table
+  then stores its last state every time, unless `delayed_push` serialises each
+  put at once.
 * `connect_timeout` — seconds the role keeps trying to reach its peers before
   giving up (default 300). It also bounds the wait for the privileges the
   `credentials` section grants, which normally arrive in milliseconds.
@@ -580,11 +582,12 @@ local supersteps = master:wait_up():preload():start()
 * `obtain_name` — `callable(value) -> string`, the name pregel routes and
   stores a vertex value by (required).
 * `pool_size` — messages per batch (default 1000).
-* `loader_capture` — whether a loader run through this instance copies each
-  value a `store_*` call is handed, so the table can be reused as soon as the
-  call returns (default `true`). `false` queues the caller's own table until
-  the flush, for a loader that builds a fresh table per record and does not
-  want a msgpack round trip per call.
+* `loader_capture` — whether a loader `pregel.loader` builds over this
+  instance copies each value a `store_*` call is handed, so the table can be
+  reused as soon as the call returns (default `true`). `false` queues the
+  caller's own table until the bucket serialises it — at the flush, or at once
+  under `delayed_push` — for a loader that builds a fresh table per record and
+  does not want a msgpack round trip per call.
 * `master_preload` — a loader object, or `callable(self, preload_args)`
   returning one, or `nil` for a master that only coordinates.
 * `preload_args` — passed to `master_preload`.
@@ -687,7 +690,8 @@ returns, so a loader may reuse one table for every record; the vertex is named
 from that copy. An instance built with `loader_capture = false` queues the
 caller's own table instead, for a bulk load that builds a fresh table per
 record and does not want a msgpack round trip per call — such a loader must
-not change a table after handing it over.
+not change a table after handing it over. A loader object of the app's own
+making, not built by `pregel.loader`, is used as it is and copies nothing.
 
 `loader.graph_edges_f(instance, path)` reads the two-section text format:
 

@@ -908,11 +908,14 @@ end
 -- options.queue_engine   -- 'space' (default) or 'table'
 -- options.pool_size      -- messages per batch (default 1000)
 -- options.delayed_push   -- back the mpool buckets with spaces (default false)
--- options.loader_capture -- a loader run through this worker copies what each
---                           store_* call is handed, so the caller may reuse
---                           the table (default true); false queues the
---                           caller's own table, for a load that never reuses
---                           one and does not want a round trip per call
+-- options.loader_capture -- a loader pregel.loader builds over this worker
+--                           copies what each store_* call is handed, so the
+--                           caller may reuse the table (default true); false
+--                           queues the caller's own table until the bucket
+--                           serialises it (at the flush, or at once under
+--                           delayed_push), for a load that never reuses one
+--                           and does not want a round trip per call. A loader
+--                           object of the app's own making copies nothing
 -- options.worker_context -- passed through to vertex:get_worker_context()
 -- options.worker_preload -- callable(self, preload_args) -> loader, or a loader
 -- options.preload_args   -- passed to worker_preload

@@ -251,11 +251,13 @@ end
 --                           may carry its own 'user:password@host:port'
 -- options.obtain_name    -- callable(value) -> vertex name (required)
 -- options.pool_size      -- messages per batch (default 1000)
--- options.loader_capture -- a loader run through this master copies what each
---                           store_* call is handed, so the caller may reuse
---                           the table (default true); false queues the
---                           caller's own table, for a load that never reuses
---                           one and does not want a round trip per call
+-- options.loader_capture -- a loader pregel.loader builds over this master
+--                           copies what each store_* call is handed, so the
+--                           caller may reuse the table (default true); false
+--                           queues the caller's own table until the flush,
+--                           for a load that never reuses one and does not
+--                           want a round trip per call. A loader object of
+--                           the app's own making copies nothing
 -- options.master_preload -- callable(self, preload_args) -> loader, or a
 --                           loader, or nil for a master that only coordinates
 -- options.preload_args   -- passed to master_preload
