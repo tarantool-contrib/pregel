@@ -117,11 +117,15 @@ holds only a `lua_call` grant and `execute` on the door:
 - the same Lua function called directly rather than through `_func`: denied;
 - on the owned space: insert, select and `truncate` succeed with no grant,
   while `create_index` and `drop` are denied, so the door covers those two;
+- the same write on a space it neither owns nor was granted: `Write access
+  to space '<name>' is denied` -- so ownership, and nothing the job user holds
+  anyway, is what lets it in;
 - `box.session.su('admin', fn)`: succeeds.
 
 The last line means §3.19's wall does not exist for in-process code, which can
 always switch its effective user. The door is chosen over `su` because it is
-namespace-checked and visible in the credentials section.
+namespace-checked and visible in the credentials section. All of this is
+pinned by `test/unit/rpc_privileges_test.lua`, which runs on both editions.
 
 *Supersedes* §4.2's `prepare` phase, §4.13(h) and §8.1.
 `worker.open(ctx) -> services` and `worker.close(services, outcome)` stay.
