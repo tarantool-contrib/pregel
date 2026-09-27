@@ -704,12 +704,11 @@ local worker_mt = {
         end,
         --- Queue one edge deletion, for the next apply_topology_mutations.
         --
-        -- One request removes one edge: apply_topology_mutations stops at the
-        -- first match, so of `a -> b` twice over, a single request leaves one
-        -- behind (measured). The local path is not like this -- a vertex
-        -- deleting its own edge drops every parallel one in a single pass --
-        -- and vertex:delete_edge() issues one request per call either way, so
-        -- which form was used decides how many edges go.
+        -- One request removes every edge from `src` to `dest`: of `a -> b`
+        -- three times over, a single request leaves none, the same as the
+        -- local path, where a vertex deleting its own edge drops every
+        -- parallel one in a single pass. So both forms of vertex:delete_edge()
+        -- remove the same edges; only when they are applied differs.
         --
         -- @param src source vertex name, which is what put the request here
         -- @param dest destination vertex name
