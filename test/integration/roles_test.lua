@@ -656,10 +656,12 @@ g.test_the_roles_find_each_other_in_the_cluster_config = function()
     end, {helper.WORKER_ROLE})
     t.assert_equals(#uris, helper.WORKER_COUNT)
 
-    -- And each peer under its replicaset's name, which is what the buckets are
-    -- ordered by: not the URI, which a move or a failover changes, and not the
-    -- instance name, which a failover changes too (pregel-jy0). The master's
-    -- pool and a worker's must agree, or they shard the graph two ways.
+    -- And each peer under its replicaset's name -- not the instance name,
+    -- which a failover changes -- the same on the master and on a worker, or
+    -- the two shard the graph two ways (pregel-jy0). That the buckets are
+    -- ordered by that name rather than by URI this fixture cannot show, since
+    -- its URIs sort the same way; mpool_test's
+    -- test_bucket_order_follows_the_server_ids does.
     local function peer_ids(server, role)
         return server:exec(function(r)
             local rv = {}
