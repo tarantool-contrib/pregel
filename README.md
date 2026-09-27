@@ -382,6 +382,11 @@ Both roles take:
 * `app_cfg` — an opaque table, handed to the app module and never read by the
   roles. See [what an app module is told](#what-an-app-module-is-told).
 * `pool_size` — messages per outgoing batch (default 1000).
+* `loader_capture` (default `true`) — the role's loaders (`master_preload`,
+  `worker_preload`) copy each value a `store_*` call is handed, so the table
+  can be reused as soon as the call returns. `false` skips that msgpack round
+  trip, for a loader that builds a fresh table per record — one that reuses a
+  table then stores its last state every time.
 * `connect_timeout` — seconds the role keeps trying to reach its peers before
   giving up (default 300). It also bounds the wait for the privileges the
   `credentials` section grants, which normally arrive in milliseconds.
@@ -575,6 +580,11 @@ local supersteps = master:wait_up():preload():start()
 * `obtain_name` — `callable(value) -> string`, the name pregel routes and
   stores a vertex value by (required).
 * `pool_size` — messages per batch (default 1000).
+* `loader_capture` — whether a loader run through this instance copies each
+  value a `store_*` call is handed, so the table can be reused as soon as the
+  call returns (default `true`). `false` queues the caller's own table until
+  the flush, for a loader that builds a fresh table per record and does not
+  want a msgpack round trip per call.
 * `master_preload` — a loader object, or `callable(self, preload_args)`
   returning one, or `nil` for a master that only coordinates.
 * `preload_args` — passed to `master_preload`.
@@ -592,7 +602,8 @@ local supersteps = master:wait_up():preload():start()
   limit logs a warning naming this option every hundred supersteps.
 
 `worker.new(name, options)` takes `workers`, `obtain_name`, `pool_size`,
-`preload_args`, `user` and `password` with the same meaning, plus:
+`loader_capture`, `preload_args`, `user` and `password` with the same meaning,
+plus:
 
 * `master` — the master's net.box URI (required).
 * `compute` — `callable(vertex)`, run once per active vertex per superstep

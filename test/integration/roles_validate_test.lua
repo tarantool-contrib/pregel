@@ -41,11 +41,27 @@ end
 
 g.test_a_full_worker_config_is_accepted = function()
     worker_role.validate(worker_cfg({
-        pool_size    = 100,
-        delayed_push = false,
-        squash_only  = true,
-        queue_engine = 'table',
+        pool_size      = 100,
+        delayed_push   = false,
+        squash_only    = true,
+        queue_engine   = 'table',
+        loader_capture = false,
     }))
+end
+
+-- Both roles run loaders -- master_preload on the master, worker_preload on
+-- every worker -- so both take the switch for the loader's copy, and it is
+-- checked like the other boolean switches.
+g.test_loader_capture_is_a_boolean_on_both_roles = function()
+    worker_role.validate(worker_cfg({loader_capture = false}))
+    master_role.validate({name = 'job', app = APP, loader_capture = false})
+    assert_refused(worker_role, worker_cfg({loader_capture = 'yes'}),
+                   "pregel.roles.worker: option 'loader_capture' must be " ..
+                   'boolean, got string')
+    assert_refused(master_role,
+                   {name = 'job', app = APP, loader_capture = 'yes'},
+                   "pregel.roles.master: option 'loader_capture' must be " ..
+                   'boolean, got string')
 end
 
 -- The credentials moved to the `credentials` section of the cluster config and

@@ -210,6 +210,7 @@ helper.MASTER_NAME = 'master'
 -- opts.autostart    -- the master role runs the job by itself (default false)
 -- opts.max_supersteps -- roles_cfg.max_supersteps for the master
 -- opts.pool_size    -- roles_cfg.pool_size for the workers
+-- opts.loader_capture -- roles_cfg.loader_capture for both roles
 -- opts.drop_worker  -- index of a worker whose roles list is left empty, as if
 --                      the role had been taken off that instance
 -- opts.drop_master  -- the same for the master instance
@@ -266,6 +267,7 @@ function helper.config(opts)
             app             = opts.app or helper.APP,
             app_cfg         = opts.app_cfg,
             connect_timeout = opts.connect_timeout,
+            loader_capture  = opts.loader_capture,
         }
     end
 

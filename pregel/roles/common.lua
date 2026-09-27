@@ -97,6 +97,10 @@ M.common_spec = {
             return true
         end,
     },
+    -- Whether a loader copies what each store_* call is handed; see
+    -- pregel/loader.lua. Common because both roles run one: master_preload
+    -- on the master, worker_preload on every worker.
+    loader_capture = {types = {boolean = true}},
     -- Seconds the role keeps trying to reach its peers. See M.connector.
     connect_timeout = {
         types = {number = true},

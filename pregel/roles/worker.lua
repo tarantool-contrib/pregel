@@ -6,6 +6,7 @@
 --       name: maxvalue                 # job name, required
 --       app: myapp.pregel              # Lua module name, required
 --       pool_size: 1000
+--       loader_capture: true           # a loader copies each value it stores
 --       delayed_push: false
 --       squash_only: false
 --       queue_engine: space            # 'space' or 'table'
@@ -249,6 +250,7 @@ local function apply(cfg)
         queue_engine   = cfg.queue_engine,
         pool_size      = cfg.pool_size,
         delayed_push   = cfg.delayed_push,
+        loader_capture = cfg.loader_capture,
         user           = user,
         password       = password,
         -- No grant_to: the privileges come from credentials.roles.pregel, and

@@ -527,6 +527,30 @@ g.test_the_app_module_is_told_about_its_job = function()
 end
 
 -------------------------------------------------------------------------------
+-- The loader's copy
+-------------------------------------------------------------------------------
+
+-- A loader reads loader_capture off the instance it pushes through, and both
+-- roles build one: master_preload runs on the master, worker_preload on every
+-- worker. So the value in roles_cfg has to reach both live objects -- which it
+-- cannot be seen to do by default, since leaving it out gives the same true a
+-- role that dropped it would.
+g.test_loader_capture_reaches_the_master_and_the_workers = function()
+    local c = Cluster:new(helper.config({loader_capture = false}),
+                          helper.server_opts)
+    c:start()
+
+    t.assert_equals(c[helper.MASTER_NAME]:exec(function(role)
+        return require(role).get().loader_capture
+    end, {helper.MASTER_ROLE}), false, 'the master')
+    for i = 1, helper.WORKER_COUNT do
+        t.assert_equals(c[helper.worker_name(i)]:exec(function(role)
+            return require(role).get().loader_capture
+        end, {helper.WORKER_ROLE}), false, 'worker ' .. i)
+    end
+end
+
+-------------------------------------------------------------------------------
 -- The privileges, granted by the credentials applier
 -------------------------------------------------------------------------------
 

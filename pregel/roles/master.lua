@@ -6,6 +6,7 @@
 --       name: maxvalue                 # job name, required
 --       app: myapp.pregel              # Lua module name, required
 --       pool_size: 1000
+--       loader_capture: true           # a loader copies each value it stores
 --       autostart: false               # run the job as soon as it can
 --       max_supersteps: 100            # stop after this many; unset = no limit
 --       app_cfg:                       # opaque, handed to the app module
@@ -323,6 +324,7 @@ local function apply(cfg)
         master_preload = common.with_job_context(app.master_preload, context),
         preload_args   = cfg.app_cfg,
         pool_size      = cfg.pool_size,
+        loader_capture = cfg.loader_capture,
         max_supersteps = cfg.max_supersteps,
         user           = user,
         password       = password,
