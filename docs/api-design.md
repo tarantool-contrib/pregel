@@ -374,7 +374,8 @@ run option.
 2. The graph as an entity with its meta space — state (D1) and partition
    manifest (D10) — and `mpool:owns()` (`pregel-gqh.1`, `.2`).
 3. The loader role and the ingestion API (D2; `pregel-gqh.3`, `.4`, `.5`,
-   `.6`, `.7`), with the loader's own reference escape (`pregel-06i`, §0.4).
+   `.6`, `.7`). The v1 loader's own reference escape is fixed already
+   (`pregel-06i`, §0.4); the ingestion API has to state its own rule.
 4. The v2 compute surface — D4, D5, D8, D9, typed messages and reducers
    (D12.4–5) — with `examples/lookalike` ported first.
 5. Run handles, fencing, per-job masters, history and the hooks (§4.8, D11,
@@ -394,8 +395,12 @@ and the history by a separate agent. What that changed:
 - The loader hands its tables to the pool by reference as well, and names a
   vertex twice — once to route it, once on arrival — so a table changed after
   the call can land under its new name on the shard of the old one. Reproduced
-  on a real worker; filed as `pregel-06i`, related to `pregel-gqh.3`, whose
-  batches carry an explicit name.
+  on a real worker and filed as `pregel-06i`. The maintainer chose to copy at
+  the call, as the vertex API does, and to make that configurable: the loader
+  copies by default, and `loader_capture = false` (a `worker.new` /
+  `master.new` option and a `roles_cfg` key on both roles) turns it off for a
+  bulk load that never reuses a table (`ecba233`, `78ba9f6`, `0cd9ab6`). The
+  vertex API's copy (D8) is not configurable.
 - D3 says whose the door's spaces are: the job user the runtime knows, not the
   session's.
 - Global mutations moved from `ctx.graph` to `v.graph` (D4–D6), so each

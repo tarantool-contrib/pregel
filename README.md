@@ -682,6 +682,13 @@ the loader itself and may use:
 None of these resolve conflicts: a vertex stored twice is reset to the later
 value, and edges may be duplicated.
 
+Each `store_*` call queues a copy of the table it is handed, taken before it
+returns, so a loader may reuse one table for every record; the vertex is named
+from that copy. An instance built with `loader_capture = false` queues the
+caller's own table instead, for a bulk load that builds a fresh table per
+record and does not want a msgpack round trip per call — such a loader must
+not change a table after handing it over.
+
 `loader.graph_edges_f(instance, path)` reads the two-section text format:
 
 ```
