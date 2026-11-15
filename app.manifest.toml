@@ -1,0 +1,26 @@
+# The package for tt v3: tt package build and tt package pack read it, and
+# the rockspec of the rock is generated from it. pregel-scm-1.rockspec stays
+# for tt rocks (LuaRocks) from a checkout.
+manifest_version = "0.1"
+
+[package]
+name = "pregel"
+description = "Pregel graph processing model for Tarantool, in pure Lua"
+license = "BSD-2-Clause"
+license_files = ["LICENSE"]
+repository = "https://github.com/tarantool-contrib/pregel"
+
+[platform]
+# The one series the suite runs on (README.md, Requirements).
+tarantool = ">=3.8.0"
+tt = ">=3.0.0"
+
+# No required dependencies. tarantool-avro is optional and deliberately not
+# listed: only loader.avro_files needs it, and it is required on first use
+# there.
+[dependencies]
+
+# The modules pregel and pregel.*, the roles pregel.roles.master and
+# pregel.roles.worker included: every Lua file under pregel/.
+[components.pregel]
+path = "pregel"

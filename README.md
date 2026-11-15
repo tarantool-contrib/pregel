@@ -45,7 +45,20 @@ repository:
 tt rocks install https://raw.githubusercontent.com/tarantool-contrib/tarantool-avro/master/tarantool-avro-scm-1.rockspec
 ```
 
-Install the rock into a `tt` environment's rocks tree:
+The rock is published for tt 3 at the
+[rocks-repo](https://github.com/tarantool-contrib/rocks-repo) of
+tarantool-contrib from the tags `vX.Y.Z`, one rock for every platform;
+`app.manifest.toml` declares it. A project depends on it, and on
+tarantool-avro for the Avro loader, in its `app.manifest.toml`:
+
+```toml
+[dependencies]
+pregel = { version = "0.1.0", registry = "https://raw.githubusercontent.com/tarantool-contrib/rocks-repo/index/" }
+tarantool-avro = { version = "0.1.0", registry = "https://raw.githubusercontent.com/tarantool-contrib/rocks-repo/index/" }
+```
+
+From a checkout, `tt package pack --format rock` packs the rock. With tt
+rocks (LuaRocks), install it into a `tt` environment's rocks tree:
 
 ```
 tt rocks make --tree /path/to/env/.rocks pregel-scm-1.rockspec
