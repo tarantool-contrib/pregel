@@ -5,3 +5,6 @@
 .rocks/
 test/var/
 var
+
+# tt package build and pack.
+/_build/
